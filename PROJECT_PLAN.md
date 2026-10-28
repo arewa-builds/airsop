@@ -17,8 +17,8 @@ paper-to-digital transition for one bench: gestures step through the protocol,
 a camera verifies the physical setup matches each step's expectation, and
 every confirmation writes a timestamped, hash-chained audit record.
 
-Career alignment: this is the concrete proof point for Associate Director,
-Laboratory Automation and Digital Enablement conversations. It extends the
+Career alignment: this is concrete proof for laboratory operations and
+automation leadership conversations. It extends the
 PharmaVerse line-clearance story from synthetic environments to a live bench,
 and it reuses the perception challenge DNA (zones become regions of interest,
 the cluster rule becomes a detection quorum, the debouncer becomes gesture
@@ -157,7 +157,7 @@ failures reproducible.
 
 ## Strategy section content (for the README)
 
-Written for the associate director lens, not the engineer lens:
+Written for the operations-leadership lens, not the engineer lens:
 
 - **Pilot plan:** one bench, one assay protocol, four weeks, baseline
   measured first.
