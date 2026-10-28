@@ -1,0 +1,75 @@
+"""hud.py - heads-up display overlay for AirSOP.
+
+M0 skeleton: static chrome only (banner, step panel, status chips, footer).
+Later milestones only mutate HUDState fields; the layout stays stable, the
+same way a good instrument panel keeps its gauges in place.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import cv2
+import numpy as np
+
+FONT = cv2.FONT_HERSHEY_SIMPLEX
+INK = (235, 235, 235)          # primary text, BGR
+MUTED = (150, 150, 150)
+PANEL = (24, 24, 24)
+ACCENT = (200, 160, 40)        # teal-ish accent in BGR
+WARN = (60, 60, 200)
+
+
+@dataclass
+class HUDState:
+    """Everything the overlay is allowed to know. Defaults = M0 skeleton."""
+    step_index: int | None = None        # None = no protocol loaded
+    step_count: int | None = None
+    instruction: str = "(no protocol loaded)"
+    gesture: str = "--"
+    verification: str = "--"
+    fps: float = 0.0
+    locked: bool = False
+    notes: list[str] = field(default_factory=list)
+
+
+def _panel(frame, x0, y0, x1, y1, alpha=0.65):
+    roi = frame[y0:y1, x0:x1]
+    fill = np.full_like(roi, PANEL)
+    frame[y0:y1, x0:x1] = cv2.addWeighted(fill, alpha, roi, 1 - alpha, 0)
+
+
+def _text(frame, text, org, scale=0.6, color=INK, thickness=1):
+    cv2.putText(frame, text, org, FONT, scale, color, thickness, cv2.LINE_AA)
+
+
+def draw_hud(frame: np.ndarray, state: HUDState) -> np.ndarray:
+    """Draw the overlay in place and return the frame."""
+    h, w = frame.shape[:2]
+
+    # top banner
+    _panel(frame, 0, 0, w, 56)
+    _text(frame, "AIRSOP", (16, 38), 0.9, INK, 2)
+    _text(frame, "touchless bench workstation", (150, 38), 0.6, MUTED)
+    if state.locked:
+        _text(frame, "LOCKED", (w - 120, 38), 0.7, WARN, 2)
+
+    # step panel (left)
+    _panel(frame, 12, 72, 388, 168)
+    if state.step_index is None:
+        _text(frame, "Step -- / --", (28, 108), 0.7, MUTED)
+    else:
+        _text(frame, f"Step {state.step_index} / {state.step_count}",
+              (28, 108), 0.7, INK)
+    _text(frame, state.instruction[:44], (28, 140), 0.55, MUTED)
+
+    # status chips (right)
+    _panel(frame, w - 268, 72, w - 12, 168)
+    _text(frame, f"gesture:  {state.gesture}", (w - 252, 108), 0.55, INK)
+    _text(frame, f"verify:   {state.verification}", (w - 252, 140), 0.55, INK)
+
+    # footer
+    _panel(frame, 0, h - 44, w, h)
+    _text(frame, f"{state.fps:4.1f} fps", (16, h - 15), 0.55, MUTED)
+    _text(frame, f"{w}x{h}", (130, h - 15), 0.55, MUTED)
+    _text(frame, "M0 scaffold", (w - 150, h - 15), 0.55, ACCENT)
+    return frame
