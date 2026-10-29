@@ -1,6 +1,7 @@
 """hud.py - heads-up display overlay for AirSOP.
 
-M0 skeleton: static chrome only (banner, step panel, status chips, footer).
+M0: static chrome (banner, step panel, status chips, footer).
+M1: palm-anchored cursor ring and a hand-presence chip.
 Later milestones only mutate HUDState fields; the layout stays stable, the
 same way a good instrument panel keeps its gauges in place.
 """
@@ -29,6 +30,9 @@ class HUDState:
     verification: str = "--"
     fps: float = 0.0
     locked: bool = False
+    cursor: tuple[int, int] | None = None   # px, EMA-smoothed palm center
+    hand: bool = False                      # hand detected this frame
+    milestone: str = "M1 hand tracking"
     notes: list[str] = field(default_factory=list)
 
 
@@ -66,10 +70,19 @@ def draw_hud(frame: np.ndarray, state: HUDState) -> np.ndarray:
     _panel(frame, w - 268, 72, w - 12, 168)
     _text(frame, f"gesture:  {state.gesture}", (w - 252, 108), 0.55, INK)
     _text(frame, f"verify:   {state.verification}", (w - 252, 140), 0.55, INK)
+    _text(frame, "hand" if state.hand else "no hand", (w - 252, 160), 0.45,
+          ACCENT if state.hand else MUTED)
+
+    # cursor: ring + center dot at the smoothed palm center
+    if state.cursor is not None:
+        cx, cy = state.cursor
+        color = ACCENT if state.hand else MUTED
+        cv2.circle(frame, (cx, cy), 18, color, 2, cv2.LINE_AA)
+        cv2.circle(frame, (cx, cy), 3, color, -1, cv2.LINE_AA)
 
     # footer
     _panel(frame, 0, h - 44, w, h)
     _text(frame, f"{state.fps:4.1f} fps", (16, h - 15), 0.55, MUTED)
     _text(frame, f"{w}x{h}", (130, h - 15), 0.55, MUTED)
-    _text(frame, "M0 scaffold", (w - 150, h - 15), 0.55, ACCENT)
+    _text(frame, state.milestone, (w - 200, h - 15), 0.55, ACCENT)
     return frame

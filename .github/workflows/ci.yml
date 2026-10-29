@@ -1,0 +1,59 @@
+name: ci
+
+# Gate for every milestone: no merge or release unless the selfcheck is
+# green both natively (core deps) and inside the published Docker image.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements.txt
+      - run: python tests/selfcheck.py
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: airsop:ci
+      - name: selfcheck in container (MediaPipe required)
+        run: docker run --rm airsop:ci
+      - name: synthetic demo render
+        run: |
+          mkdir -p out && chmod 777 out
+          docker run --rm -v "$PWD/out:/app/out" airsop:ci \
+            python -m src.main --synthetic --headless --frames 90 --record out/demo.mp4
+          test -s out/demo.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-mp4
+          path: out/demo.mp4
+      - name: publish to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for t in latest ${GITHUB_SHA::7}; do
+            docker tag airsop:ci ghcr.io/arewa-builds/airsop:$t
+            docker push ghcr.io/arewa-builds/airsop:$t
+          done

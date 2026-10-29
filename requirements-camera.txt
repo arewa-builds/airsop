@@ -1,0 +1,4 @@
+# Live webcam + hand tracking. Use this file INSTEAD of requirements.txt on a
+# laptop: mediapipe brings its own OpenCV build with window support.
+numpy>=1.24
+mediapipe>=0.10.30

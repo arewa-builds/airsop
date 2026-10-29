@@ -76,7 +76,7 @@ class SyntheticSource:
         cy = int(self.height / 2 + (self.height / 4) * np.cos(0.7 * t))
         cv2.drawMarker(frame, (cx, cy), (0, 200, 200),
                        cv2.MARKER_CROSS, 40, 2, cv2.LINE_AA)
-        cv2.putText(frame, f"synthetic frame {self._n}", (20, self.height - 20),
+        cv2.putText(frame, f"synthetic frame {self._n}", (20, self.height - 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (140, 140, 140), 1,
                     cv2.LINE_AA)
         self._n += 1

@@ -1,0 +1,9 @@
+{
+  "name": "AirSOP",
+  "build": { "dockerfile": "../Dockerfile", "context": ".." },
+  "remoteUser": "root",
+  "postCreateCommand": "python tests/selfcheck.py",
+  "customizations": {
+    "vscode": { "extensions": ["ms-python.python"] }
+  }
+}

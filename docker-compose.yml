@@ -1,0 +1,13 @@
+# docker compose run --rm selfcheck   -> headless checks (the default proof)
+# docker compose run --rm demo        -> renders out/demo.mp4 from synthetic input
+services:
+  selfcheck:
+    build: .
+    image: airsop:local
+  demo:
+    build: .
+    image: airsop:local
+    command: ["python", "-m", "src.main", "--synthetic", "--headless",
+              "--frames", "300", "--record", "out/demo.mp4"]
+    volumes:
+      - ./out:/app/out
