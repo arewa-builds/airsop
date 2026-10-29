@@ -43,7 +43,7 @@ jobs:
         run: |
           mkdir -p out && chmod 777 out
           docker run --rm -v "$PWD/out:/app/out" airsop:ci \
-            python -m src.main --synthetic --headless --frames 90 --record out/demo.mp4
+            python -m src.main --synthetic --headless --frames 420 --record out/demo.mp4
           test -s out/demo.mp4
       - uses: actions/upload-artifact@v4
         with:

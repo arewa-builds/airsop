@@ -1,4 +1,4 @@
-"""hands.py - hand landmark tracking for AirSOP (M1).
+"""hands.py - hand landmark tracking for AirSOP (M1, scripted poses M2).
 
 HandTracker wraps the MediaPipe Hand Landmarker (Tasks API). The import is
 lazy, so headless environments without mediapipe still run everything
@@ -143,9 +143,17 @@ class SyntheticHandTracker:
         [0.03, -0.10], [0.04, -0.02], [0.05, -0.04], [0.06, -0.06],
         [0.06, -0.08]], dtype=np.float64)
 
-    def __init__(self, seed: int = 7, jitter: float = 0.004):
+    def __init__(self, seed: int = 7, jitter: float = 0.004,
+                 script: list[tuple[str | None, int]] | None = None):
+        """script (M2): optional [(gesture or None, frames), ...] looped.
+
+        Without a script the hand is the fixed open pose used by the M1
+        cursor tests. With one, each frame renders that gesture (see
+        src/poses.py) at the orbit center; None means no hand in view.
+        """
         self.rng = np.random.default_rng(seed)
         self.jitter = jitter
+        self.script = script
         self._n = 0
 
     def truth(self, n: int) -> np.ndarray:
@@ -154,7 +162,26 @@ class SyntheticHandTracker:
         return np.array([0.5 + (1.0 / 3.0) * np.sin(t),
                          0.5 + 0.25 * np.cos(0.7 * t)])
 
-    def process(self, frame_bgr: np.ndarray) -> HandObservation:
+    def scripted_label(self, n: int) -> str | None:
+        total = sum(k for _, k in self.script)
+        n %= total
+        for label, k in self.script:
+            if n < k:
+                return label
+            n -= k
+        return None
+
+    def process(self, frame_bgr: np.ndarray) -> HandObservation | None:
+        if self.script:
+            from .poses import hand_pose
+            label = self.scripted_label(self._n)
+            c = self.truth(self._n) * 0.5 + 0.25     # gentler orbit
+            self._n += 1
+            if label is None:
+                return None
+            lm = hand_pose(label, center=c, scale=0.16)
+            lm[:, :2] += self.rng.normal(0.0, self.jitter, (21, 2))
+            return HandObservation(landmarks=lm)
         c = self.truth(self._n) + self.rng.normal(0.0, self.jitter, 2)
         xy = self._POSE + c
         z = np.zeros((21, 1))

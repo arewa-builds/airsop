@@ -1,4 +1,4 @@
-"""selfcheck.py - M0 + M1 headless checks.
+"""selfcheck.py - M0 to M2 headless checks.
 
 Usage: python3 tests/selfcheck.py   (from the repo root)
 
@@ -20,6 +20,12 @@ from src.hud import HUDState, draw_hud               # noqa: E402
 from src.main import main                            # noqa: E402
 from src.hands import (SyntheticHandTracker, HandObservation,  # noqa: E402
                        CursorEMA)
+from src.gestures import GESTURES, HoldDebouncer, classify, NONE  # noqa: E402
+from src.poses import hand_pose                                  # noqa: E402
+from src.replay import replay                                    # noqa: E402
+
+ROOT = os.path.join(os.path.dirname(__file__), "..")
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
 RESULTS = []
 BLANK = np.zeros((4, 4, 3), np.uint8)
@@ -158,6 +164,96 @@ def t_real_tracker():
         check("MediaPipe Hand Landmarker loads", False, repr(e)[:60])
 
 
+# ---- M2: gestures -----------------------------------------------------
+
+def t_classifier_invariance():
+    bad, n = [], 0
+    for g in GESTURES:
+        for rot in (-25, -10, 0, 10, 25):
+            for scale in (0.08, 0.18, 0.30):
+                for left in (False, True):
+                    n += 1
+                    got = classify(hand_pose(g, rotation=rot, scale=scale,
+                                             left=left))
+                    if got != g:
+                        bad.append((g, rot, scale, left, got))
+    check("classifier: 6 gestures x rotation/scale/hand", not bad,
+          f"{n - len(bad)}/{n} correct")
+
+
+def t_classifier_noise():
+    rng = np.random.default_rng(0)
+    ok = n = 0
+    for g in GESTURES:
+        for k in range(100):
+            lm = hand_pose(g, rotation=rng.uniform(-25, 25), scale=0.12,
+                           left=bool(k % 2))
+            lm[:, :2] += rng.normal(0.0, 0.008, (21, 2))
+            n += 1
+            ok += classify(lm) == g
+    check("classifier under 7% palm-length jitter", ok / n >= 0.97,
+          f"{ok / n:.1%} of {n}")
+    check("no hand -> none", classify(None) == NONE)
+
+
+def t_debouncer_rules():
+    d = HoldDebouncer(hold_frames=5, grace_frames=2)
+    out = [d.update("pinch") for _ in range(12)]
+    once = out.count("pinch") == 1 and out[4] == "pinch"
+    d.reset()
+    seq = ["fist"] * 3 + [NONE] * 2 + ["fist"] * 2   # dropout inside grace
+    fired = [d.update(x) for x in seq]
+    check("debouncer: fires once, survives dropout",
+          once and fired.count("fist") == 1, f"fired at frame {out.index('pinch')}")
+
+
+def t_fixture_replay():
+    names = sorted(f for f in os.listdir(FIXTURE_DIR) if f.endswith(".jsonl"))
+    print(f"\n      {'fixture':<34} {'frames':>6} {'acc':>6}  events")
+    all_ok = bool(names)
+    for f in names:
+        r = replay(os.path.join(FIXTURE_DIR, f))
+        all_ok &= r.ok
+        acc = "  n/a" if r.frame_acc != r.frame_acc else f"{r.frame_acc:5.1%}"
+        print(f"  {'PASS' if r.ok else 'FAIL'} {r.name:<34} {r.frames:>6} "
+              f"{acc:>6}  {','.join(r.events) or '(none)'}")
+        if not r.ok:
+            print(f"       expected {r.expected}")
+    print()
+    check("fixture replay: all expected events, in order", all_ok,
+          f"{len(names)} fixtures")
+
+
+def t_fixtures_match_generator():
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import make_fixtures
+    stale = []
+    for name, sc in make_fixtures.scenarios().items():
+        path = os.path.join(FIXTURE_DIR, f"{name}.jsonl")
+        if not os.path.exists(path) or \
+                open(path).read() != make_fixtures.render(name, sc):
+            stale.append(name)
+    check("committed fixtures match generator", not stale,
+          ", ".join(stale) or "deterministic")
+
+
+def t_demo_event_sequence():
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        main(["--synthetic", "--headless", "--frames", "360",
+              "--width", "640", "--height", "360"])
+    acts = [ln.split(" ", 2)[2] for ln in buf.getvalue().splitlines()
+            if ln.startswith("event")]
+    want = ["point_right -> next", "pinch -> confirm", "point_right -> next",
+            "pinch -> confirm", "point_left -> back", "peace -> help",
+            "fist -> lock", "pinch ignored (locked)", "fist -> unlock",
+            "open_palm -> pause"]
+    check("synthetic loop: actions + lock gate", acts == want,
+          f"{len(acts)} events")
+
+
 if __name__ == "__main__":
     t_synthetic_shape()
     t_synthetic_deterministic()
@@ -171,5 +267,11 @@ if __name__ == "__main__":
     t_cursor_tracks_truth()
     t_hud_cursor()
     t_real_tracker()
+    t_classifier_invariance()
+    t_classifier_noise()
+    t_debouncer_rules()
+    t_fixture_replay()
+    t_fixtures_match_generator()
+    t_demo_event_sequence()
     print(f"\n{sum(RESULTS)}/{len(RESULTS)} checks PASS")
     sys.exit(0 if all(RESULTS) else 1)

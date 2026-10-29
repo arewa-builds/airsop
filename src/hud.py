@@ -2,6 +2,7 @@
 
 M0: static chrome (banner, step panel, status chips, footer).
 M1: palm-anchored cursor ring and a hand-presence chip.
+M2: hold-progress arc on the cursor and the last fired action.
 Later milestones only mutate HUDState fields; the layout stays stable, the
 same way a good instrument panel keeps its gauges in place.
 """
@@ -32,7 +33,10 @@ class HUDState:
     locked: bool = False
     cursor: tuple[int, int] | None = None   # px, EMA-smoothed palm center
     hand: bool = False                      # hand detected this frame
-    milestone: str = "M1 hand tracking"
+    skeleton: list[tuple[int, int]] | None = None   # 21 landmark px
+    hold: float = 0.0                       # 0..1 hold-to-trigger progress
+    last_action: str = ""                   # e.g. "pinch -> confirm"
+    milestone: str = "M2 gestures"
     notes: list[str] = field(default_factory=list)
 
 
@@ -44,6 +48,12 @@ def _panel(frame, x0, y0, x1, y1, alpha=0.65):
 
 def _text(frame, text, org, scale=0.6, color=INK, thickness=1):
     cv2.putText(frame, text, org, FONT, scale, color, thickness, cv2.LINE_AA)
+
+
+# MediaPipe hand topology: thumb, four fingers, palm.
+BONES = ((0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
+         (5, 9), (9, 10), (10, 11), (11, 12), (9, 13), (13, 14), (14, 15),
+         (15, 16), (13, 17), (17, 18), (18, 19), (19, 20), (0, 17))
 
 
 def draw_hud(frame: np.ndarray, state: HUDState) -> np.ndarray:
@@ -73,12 +83,27 @@ def draw_hud(frame: np.ndarray, state: HUDState) -> np.ndarray:
     _text(frame, "hand" if state.hand else "no hand", (w - 252, 160), 0.45,
           ACCENT if state.hand else MUTED)
 
+    # hand skeleton (thin, so it never competes with the cursor)
+    if state.skeleton is not None:
+        for a, b in BONES:
+            cv2.line(frame, state.skeleton[a], state.skeleton[b], MUTED, 1,
+                     cv2.LINE_AA)
+        for pt in state.skeleton:
+            cv2.circle(frame, pt, 2, INK, -1, cv2.LINE_AA)
+
     # cursor: ring + center dot at the smoothed palm center
     if state.cursor is not None:
         cx, cy = state.cursor
         color = ACCENT if state.hand else MUTED
         cv2.circle(frame, (cx, cy), 18, color, 2, cv2.LINE_AA)
         cv2.circle(frame, (cx, cy), 3, color, -1, cv2.LINE_AA)
+        if state.hold > 0.0:
+            cv2.ellipse(frame, (cx, cy), (26, 26), -90, 0,
+                        int(360 * state.hold), INK, 3, cv2.LINE_AA)
+
+    if state.last_action:
+        _panel(frame, 12, 176, 388, 210)
+        _text(frame, state.last_action, (28, 200), 0.55, ACCENT)
 
     # footer
     _panel(frame, 0, h - 44, w, h)

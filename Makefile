@@ -10,7 +10,7 @@ check: image                 ## headless selfcheck inside Docker
 demo: image                  ## render out/demo.mp4 from synthetic input
 	mkdir -p out
 	docker run --rm -v "$(CURDIR)/out:/app/out" $(IMAGE) \
-	  python -m src.main --synthetic --headless --frames 300 --record out/demo.mp4
+	  python -m src.main --synthetic --headless --frames 420 --record out/demo.mp4
 
 image:
 	docker build -t $(IMAGE) .

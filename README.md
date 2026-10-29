@@ -8,10 +8,10 @@ without touching a keyboard, the camera verifies the physical setup matches
 each step, and every confirmation writes a timestamped, hash-chained audit
 record.
 
-Status: **M1 code complete** (hand tracking with a palm-anchored, EMA
-(Exponential Moving Average) smoothed cursor; 13/13 headless checks PASS).
-The live gloved-hand check is the remaining M1 exit item. See the roadmap
-below.
+Status: **M2 complete** (six-gesture classifier, hold-to-trigger debouncer,
+fixture replay; 20/20 headless checks PASS, 21/21 in Docker). M1 hand
+tracking is code complete; the live gloved-hand check is its remaining exit
+item. See the roadmap below.
 
 [![ci](https://github.com/arewa-builds/airsop/actions/workflows/ci.yml/badge.svg)](https://github.com/arewa-builds/airsop/actions/workflows/ci.yml)
 
@@ -25,7 +25,7 @@ and the hand model, so it runs the same on any machine.
 docker run --rm ghcr.io/arewa-builds/airsop
 ```
 
-That runs the headless selfcheck and should print `14/14 checks PASS`.
+That runs the headless selfcheck and should print `21/21 checks PASS`.
 
 | Goal | Command |
 |---|---|
@@ -92,6 +92,76 @@ with ground truth known in advance, before trusting the pipeline with
 hardware. Same philosophy as a flight simulator: prove the system in a world
 you control first.
 
+## Gestures (M2)
+
+Six gestures, each mapped to one bench action. A gesture fires only after
+it is held for 18 frames (0.6 s at 30 fps), fires once, and must be
+released before it fires again. Tracking dropouts of up to 3 frames do not
+reset the hold, which matters with gloves.
+
+| Gesture | Shape | AirSOP action |
+|---|---|---|
+| `point_right` | index only, pointing right | next step |
+| `point_left` | index only, pointing left | previous step |
+| `pinch` | thumb meets index tip, other three fingers up (OK sign) | confirm step |
+| `fist` | all four fingers curled | lock or unlock; the only gesture honored while locked |
+| `open_palm` | all fingers extended | pause |
+| `peace` | index and middle up | help |
+
+The classifier is geometric, not learned. A finger counts as extended when
+its tip is more than 1.10x farther from the wrist than its PIP (proximal
+interphalangeal) joint; pinch is thumb-to-index distance under 0.25 palm
+lengths; a point counts as horizontal when the index direction is within
+about 35 degrees of the screen axis. All tests are ratios of 2D distances,
+so they hold across hand size, camera distance, in-plane rotation, and left
+or right hand. Depth (z) is ignored because it is the noisiest landmark
+coordinate. Pointing straight up is deliberately not a command.
+
+Why rules instead of a model: every decision is explainable in one line
+and auditable, there is no training set to collect, and thresholds can be
+reviewed like any other controlled parameter.
+
+### Fixture replay
+
+`tests/fixtures/*.jsonl` are landmark sequences (one meta line, then one
+line per frame) replayed through the same classifier and debouncer as the
+live loop. The selfcheck prints a PASS table:
+
+| Fixture | What it proves |
+|---|---|
+| `each_gesture_once` | all six gestures fire, in order |
+| `flicker_rejected` | 10-frame gestures (under the hold) never fire |
+| `dropout_tolerated` | two 2-frame tracking losses do not break a hold |
+| `long_hold_fires_once` | a 4 s fist fires once, no auto-repeat |
+| `release_rearms` | release, then the same gesture fires again |
+| `non_command_pose_ignored` | 2 s of pointing up fires nothing |
+| `protocol_walk_left_hand_tilted` | 7-step bench run with a left hand, 15 degree tilt, smaller hand, heavier jitter |
+
+These fixtures are synthetic, built by `python tools/make_fixtures.py` from
+procedural poses (`src/poses.py`) with jitter, drift, and dropouts. The
+selfcheck also proves the committed files match the generator. Synthetic
+poses are cleaner than real tracking, so the selfcheck adds a noise
+check: with landmark jitter at about 7% of palm length, frame accuracy is
+99.2% (it falls to about 91% at 10% and 59% at 17%).
+
+Record real fixtures, gloved or bare, with the live loop:
+
+```bash
+python -m src.main --record-landmarks tests/fixtures/real_gloved_walk.jsonl \
+    --expect point_right,pinch,point_left
+```
+
+Any `.jsonl` in `tests/fixtures/` is replayed automatically.
+
+### Shared core decision
+
+The vocabulary matches SterileView's planned six gestures exactly, so the
+engine is portable. It stays inside AirSOP for now: the rule is not to pay
+for abstraction before the second use case is real. When SterileView M2
+consumes the same `gestures.py` unchanged, both repos switch to a shared
+`airgesture` package. If the vocabularies diverge, the engines stay
+separate and this section will say why.
+
 ## Repository structure
 
 ```
@@ -110,10 +180,15 @@ airsop/
 │   ├── main.py             # capture loop and wiring
 │   ├── capture.py          # CameraSource + SyntheticSource
 │   ├── hands.py            # HandTracker, SyntheticHandTracker, CursorEMA
+│   ├── gestures.py         # classify(), HoldDebouncer, ACTIONS
+│   ├── poses.py            # procedural 21-landmark hand poses
+│   ├── replay.py           # fixture replay through the live pipeline
 │   └── hud.py              # overlay rendering (HUDState driven)
 ├── tests/
-│   ├── fixtures/           # recorded landmark sequences (M2)
+│   ├── fixtures/           # landmark replay fixtures (.jsonl)
 │   └── selfcheck.py        # headless smoke tests
+├── tools/
+│   └── make_fixtures.py    # regenerates the synthetic fixtures
 └── assets/
 ```
 
@@ -123,8 +198,8 @@ airsop/
 |---|---|---|---|
 | M0 | Scaffold, capture loop, HUD skeleton | Overlay renders, selfcheck green | done |
 | M1 | Hand tracking, EMA-smoothed cursor | Tracks with nitrile gloves | code done, glove check pending |
-| M2 | Gesture classifier + hold-to-trigger debounce | Fixture replay PASS table | next |
-| M3 | SOP engine + hash-chained audit log | Full protocol run by gesture | |
+| M2 | Gesture classifier + hold-to-trigger debounce | Fixture replay PASS table | done |
+| M3 | SOP engine + hash-chained audit log | Full protocol run by gesture | next |
 | M4 | Labware verification (rack, cap colors) | Step blocks on missing tube | |
 | M5 | Demo video + README strategy section | 60-90 s recorded run | |
 

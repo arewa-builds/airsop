@@ -8,6 +8,6 @@ services:
     build: .
     image: airsop:local
     command: ["python", "-m", "src.main", "--synthetic", "--headless",
-              "--frames", "300", "--record", "out/demo.mp4"]
+              "--frames", "420", "--record", "out/demo.mp4"]
     volumes:
       - ./out:/app/out
